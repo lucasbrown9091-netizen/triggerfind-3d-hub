@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const { data: keyData, error: keyErr } = await supabase
         .from('license_keys')
-        .select('id, is_used, license_key, license_type')
+        .select('id, is_used, license_key')
         .eq('license_key', normalizedLicense)
         .limit(1)
         .maybeSingle();
@@ -132,8 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
-          license_type: keyData.license_type,
-        }, { onConflict: 'user_id' })
+        } as any, { onConflict: 'user_id' })
         .select()
         .single();
 
