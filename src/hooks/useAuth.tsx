@@ -42,33 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (username: string, password: string, licenseKey: string) => {
     try {
-      // 1) Validate username availability early
-      const { data: existingUserByUsername, error: usernameCheckError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('username', username)
-        .maybeSingle();
-
-      if (usernameCheckError) {
-        toast({
-          title: "Sign Up Failed",
-          description: "Could not verify username availability.",
-          variant: "destructive",
-        });
-        return { error: usernameCheckError };
-      }
-
-      if (existingUserByUsername) {
-        const error = new Error('Username already taken');
-        toast({
-          title: "Sign Up Failed",
-          description: "Username is already taken.",
-          variant: "destructive",
-        });
-        return { error };
-      }
-
-      // 2) Validate license key before creating auth user
+      // 1) Validate license key before creating auth user (allowed for anon)
       const { data: keyRow, error: keyFetchError } = await supabase
         .from('license_keys')
         .select('*')
@@ -85,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: keyFetchError || new Error('Invalid license key') };
       }
 
-      // 3) Create auth user with deterministic synthetic email from username
+      // 2) Create auth user with deterministic synthetic email from username
       const generatedEmail = `${username}@users.local`;
 
       const { data: signUpData, error: authError } = await supabase.auth.signUp({
@@ -110,7 +84,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: authError || new Error(message) };
       }
 
-      // 4) Mark license as used
+      // 3) Create profile row (RLS should allow the authenticated user to create their own profile)
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: signUpData.user.id,
+          username,
+          license_key: licenseKey,
+          license_type: keyRow.license_type,
+        });
+
+      if (profileError) {
+        const message = profileError.message?.toLowerCase().includes('duplicate')
+          ? 'Username is already taken.'
+          : profileError.message;
+        toast({
+          title: "Profile creation failed",
+          description: message,
+          variant: "destructive",
+        });
+        return { error: profileError };
+      }
+
+      // 4) Mark license as used only after successful profile creation
       const { error: updateKeyError } = await supabase
         .from('license_keys')
         .update({ is_used: true, used_by: signUpData.user.id, used_at: new Date().toISOString() })
@@ -123,25 +119,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           variant: "destructive",
         });
         return { error: updateKeyError };
-      }
-
-      // 5) Create profile row
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: signUpData.user.id,
-          username,
-          license_key: licenseKey,
-          license_type: keyRow.license_type,
-        });
-
-      if (profileError) {
-        toast({
-          title: "Profile creation failed",
-          description: profileError.message,
-          variant: "destructive",
-        });
-        return { error: profileError };
       }
 
       toast({
