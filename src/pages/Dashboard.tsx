@@ -129,6 +129,34 @@ export default function Dashboard() {
       // Patterns
       const triggerNameRegex = /\bTrigger(Server)?Event\s*\(\s*(["'`])([^"'`]+)\2/gi;
       const triggerArgsRegex = /\bTrigger(Server)?Event\s*\(([^\)]*)\)/gi;
+      const lineServerRegex = /^\s*TriggerServerEvent\s*\([^\n]*\)/i;
+      const lineClientRegex = /^\s*TriggerEvent\s*\([^\n]*\)/i;
+      const autoKeywords = [
+        'PugFishToggleItem',
+        'ak4y-dailyWheel:giveItem',
+        'Pug:server:RobberyGiveItem',
+        'lation_mining:sellItem',
+        '17mov_postman:collectLetter',
+        'jg-mechanic:server:buy-item',
+        'pug-fishing:Server:ToggleItem',
+        'jim-mining-main:server:toggleItem',
+        'brutal_shop_robbery:server:AddItem',
+        'angelicxs-CivilianJobs:Server:Payment',
+        'mc9-taco:server:addItem',
+        'xmmx_letscookplus:server:toggleItem',
+        'bobi-selldrugs:server:RetrieveDrugs',
+        'jim-mechanic:server:toggleItem',
+        'jim-consumables:server:toggleItem',
+        'CL-PoliceGarageV2:RefundRent',
+        'brutal_hunting:server:AddItem',
+        'cdn-fuel:station:server:Withdraw',
+        'ak47_drugmanager:pickedupitem',
+        'angelicxs-CivilianJobs:Server:GainItem',
+        't1ger_lib:server:addItem',
+        'CPT_Raids:Server:GiveItem',
+        'mc9-coretto:server:addItem'
+      ];
+      const argKeywords = ['amount','item','itemname','paytype'];
       const vector3Regex = /\bvector3\s*\([^\)]*\)/gi;
       const vector2Regex = /\bvector2\s*\([^\)]*\)/gi;
       const vector4Regex = /\bvector4\s*\([^\)]*\)/gi;
@@ -137,6 +165,10 @@ export default function Dashboard() {
       // Detections
       const triggerNames: string[] = [];
       const triggerByArgs: string[] = [];
+      const triggerLinesServer: string[] = [];
+      const triggerLinesClient: string[] = [];
+      const triggerAutoByKeywords: string[] = [];
+      const triggerByArgKeywords: string[] = [];
       const v2: string[] = [];
       const v3: string[] = [];
       const v4: string[] = [];
@@ -147,8 +179,23 @@ export default function Dashboard() {
         triggerNames.push(m[3]);
       }
       while ((m = triggerArgsRegex.exec(allText)) !== null) {
-        const args = m[2].trim().replace(/\s+/g, ' ').slice(0, 200);
+        const args = m[2].trim().replace(/\s+/g, ' ').slice(0, 400);
         triggerByArgs.push(args);
+      }
+      // line-based collections
+      const lines = allText.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (lineServerRegex.test(trimmed)) triggerLinesServer.push(trimmed);
+        if (lineClientRegex.test(trimmed)) triggerLinesClient.push(trimmed);
+
+        const lower = trimmed.toLowerCase();
+        if (autoKeywords.some(k => lower.includes(k.toLowerCase()))) {
+          triggerAutoByKeywords.push(trimmed);
+        }
+        if ((/^\s*triggerserverevent|^\s*triggerevent/i).test(trimmed) && argKeywords.some(k => lower.includes(k))) {
+          triggerByArgKeywords.push(trimmed);
+        }
       }
       const pushAll = (re: RegExp, into: string[]) => {
         let r: RegExpExecArray | null;
@@ -165,9 +212,12 @@ export default function Dashboard() {
         {
           scan_type: 'triggers',
           results: { parts: {
-            TriggerServerOrClientEvent: Array.from(new Set(triggerNames)).slice(0, 200),
-            AutoDetectedByArgs: Array.from(new Set(triggerByArgs)).slice(0, 200)
-          }, count: (new Set(triggerNames)).size, processed_at: now }
+            TriggerServerEvent: Array.from(new Set(triggerLinesServer)).slice(0, 1000),
+            TriggerEvent: Array.from(new Set(triggerLinesClient)).slice(0, 1000),
+            AutoDetectedTriggers: Array.from(new Set(triggerAutoByKeywords)).slice(0, 1000),
+            TriggersDetectedByArguments: Array.from(new Set(triggerByArgKeywords)).slice(0, 1000)
+          },
+          processed_at: now }
         },
         {
           scan_type: 'locations',
@@ -221,10 +271,14 @@ export default function Dashboard() {
   const getResultsByType = (type: string) => {
     const raw = scanResults.find(result => result.scan_type === type)?.results || {};
     if (type === 'triggers') {
-      const names: string[] = raw.parts?.TriggerServerOrClientEvent || [];
-      const byArgs: string[] = raw.parts?.AutoDetectedByArgs || [];
-      const items = [...names, ...byArgs];
-      return { count: raw.count ?? items.length, items };
+      const serverLines: string[] = raw.parts?.TriggerServerEvent || [];
+      const clientLines: string[] = raw.parts?.TriggerEvent || [];
+      const autoByKeywords: string[] = raw.parts?.AutoDetectedTriggers || [];
+      const byArgKeywords: string[] = raw.parts?.TriggersDetectedByArguments || [];
+      return {
+        count: (serverLines.length + clientLines.length + autoByKeywords.length + byArgKeywords.length),
+        items: [...serverLines, ...clientLines, ...autoByKeywords, ...byArgKeywords]
+      };
     }
     if (type === 'locations') {
       const v2: string[] = raw.vector2 || [];
