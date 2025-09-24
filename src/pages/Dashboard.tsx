@@ -129,6 +129,7 @@ export default function Dashboard() {
       // Patterns
       const triggerNameRegex = /\bTrigger(Server)?Event\s*\(\s*(["'`])([^"'`]+)\2/gi;
       const triggerArgsRegex = /\bTrigger(Server)?Event\s*\(([^\)]*)\)/gi;
+      const eventCallRegex = /\bTrigger(Server)?Event\s*\([^)]*\)/gi;
       const lineServerRegex = /^\s*TriggerServerEvent\s*\([^\n]*\)/i;
       const lineClientRegex = /^\s*TriggerEvent\s*\([^\n]*\)/i;
       const autoKeywords = [
@@ -182,6 +183,14 @@ export default function Dashboard() {
         const args = m[2].trim().replace(/\s+/g, ' ').slice(0, 400);
         triggerByArgs.push(args);
       }
+      // event-call based collections (robust, regardless of line starts)
+      let c: RegExpExecArray | null;
+      while ((c = eventCallRegex.exec(allText)) !== null) {
+        const call = c[0].trim();
+        if (/^\s*TriggerServerEvent/i.test(call)) triggerLinesServer.push(call);
+        else if (/^\s*TriggerEvent/i.test(call)) triggerLinesClient.push(call);
+      }
+
       // line-based collections
       const lines = allText.split(/\r?\n/);
       for (const line of lines) {
@@ -208,14 +217,16 @@ export default function Dashboard() {
 
       // Insert scan results
       const now = new Date().toISOString();
+      // de-duplicate
+      const uniq = (arr: string[]) => Array.from(new Set(arr));
       const inserts = [
         {
           scan_type: 'triggers',
           results: { parts: {
-            TriggerServerEvent: Array.from(new Set(triggerLinesServer)).slice(0, 1000),
-            TriggerEvent: Array.from(new Set(triggerLinesClient)).slice(0, 1000),
-            AutoDetectedTriggers: Array.from(new Set(triggerAutoByKeywords)).slice(0, 1000),
-            TriggersDetectedByArguments: Array.from(new Set(triggerByArgKeywords)).slice(0, 1000)
+            TriggerServerEvent: uniq(triggerLinesServer).slice(0, 2000),
+            TriggerEvent: uniq(triggerLinesClient).slice(0, 2000),
+            AutoDetectedTriggers: uniq(triggerAutoByKeywords).slice(0, 2000),
+            TriggersDetectedByArguments: uniq(triggerByArgKeywords).slice(0, 2000)
           },
           processed_at: now }
         },
