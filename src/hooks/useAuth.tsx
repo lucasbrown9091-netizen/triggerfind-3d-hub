@@ -55,17 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
 
         if (error) {
-          // If RLS prevents anon from reading, defer until after auth
-          if (String(error.message).toLowerCase().includes('permission') || String(error.message).toLowerCase().includes('not authorized')) {
-            deferLicenseValidation = true;
-          } else {
-            toast({
-              title: "License validation failed",
-              description: "Temporary error checking license. Please try again.",
-              variant: "destructive",
-            });
-            return { error };
-          }
+          // Defer license validation to post-auth for ANY pre-auth error (covers RLS, network, etc.)
+          deferLicenseValidation = true;
         } else {
           keyRow = data;
         }
