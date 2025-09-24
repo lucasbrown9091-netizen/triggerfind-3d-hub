@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const { data: keyData, error: keyErr } = await supabase
         .from('license_keys')
-        .select('id, is_used, expires_at, license_key')
+        .select('id, is_used, license_key, license_type')
         .eq('license_key', normalizedLicense)
         .limit(1)
         .maybeSingle();
@@ -94,13 +94,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('License key already used') };
       }
 
-      // Check if license key has expired
-      if (keyData.expires_at && new Date(keyData.expires_at) < new Date()) {
-        console.log("License key has expired:", keyData.expires_at);
-        toast({ title: "License key expired", description: "This license key has expired.", variant: "destructive" });
-        return { error: new Error('License key expired') };
-      }
-
       console.log("License key validation successful:", keyData);
 
       // Now attempt to create the user
@@ -110,8 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: { 
           data: { 
             username, 
-            license_key: normalizedLicense,
-            license_expires_at: keyData.expires_at
+            license_key: normalizedLicense
           } 
         },
       });
@@ -133,31 +125,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log("User created successfully:", signUpData.user.id);
 
-      // Create profile row
-      const { error: profileError } = await supabase
+      // Create or update profile row, and return the row to get its id (for license_keys.used_by FK)
+      const { data: profileRow, error: profileError } = await supabase
         .from('profiles')
-        .insert({
+        .upsert({
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
-          license_expires_at: keyData.expires_at,
-        });
+          license_type: keyData.license_type,
+        }, { onConflict: 'user_id' })
+        .select()
+        .single();
 
       if (profileError) {
         console.error("Profile creation error:", profileError);
-        // Clean up by deleting the auth user if profile creation fails
         await supabase.auth.signOut();
         const message = profileError.message?.toLowerCase().includes('duplicate') ? 'Username is already taken.' : profileError.message;
         toast({ title: "Profile creation failed", description: message, variant: "destructive" });
         return { error: profileError };
       }
 
-      // Mark license as used
+      // Mark license as used (license_keys.used_by references profiles.id)
       const { error: updateKeyError } = await supabase
         .from('license_keys')
         .update({ 
           is_used: true, 
-          used_by: signUpData.user.id, 
+          used_by: profileRow?.id ?? null, 
           used_at: new Date().toISOString() 
         })
         .eq('id', keyData.id);
