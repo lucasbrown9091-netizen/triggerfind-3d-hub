@@ -87,8 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (authError || !signUpData.user) {
-        const message = authError?.message || 'Unable to create user';
         // Common cause: duplicate synthetic email when username already exists
+        const raw = (authError?.message || '').toLowerCase();
+        const isDuplicate = raw.includes('duplicate') || raw.includes('already registered') || raw.includes('users_email_key');
+        const message = isDuplicate ? 'Username is already taken.' : (authError?.message || 'Unable to create user');
         toast({
           title: "Sign Up Failed",
           description: message,
