@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 interface AuthContextType {
   user: User | null;
   session: Session | null;
-  signUp: (email: string, password: string, username: string, licenseKey: string) => Promise<{ error: any }>;
+  signUp: (username: string, password: string, licenseKey: string) => Promise<{ error: any }>;
   signIn: (username: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   loading: boolean;
@@ -40,36 +40,90 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, username: string, licenseKey: string) => {
+  const signUp = async (username: string, password: string, licenseKey: string) => {
     try {
-      const redirectUrl = `${window.location.origin}/`;
-      
-      const { error } = await supabase.auth.signUp({
-        email,
+      // We do not collect an email; generate a non-deliverable email from username
+      const generatedEmail = `${username}@users.local`;
+
+      const { data: signUpData, error: authError } = await supabase.auth.signUp({
+        email: generatedEmail,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
           data: {
             username,
             license_key: licenseKey,
-          }
-        }
+          },
+        },
       });
-      
-      if (error) {
+
+      if (authError || !signUpData.user) {
         toast({
           title: "Sign Up Failed",
-          description: error.message,
+          description: authError?.message || "Unable to create user",
           variant: "destructive",
         });
-      } else {
-        toast({
-          title: "Account Created",
-          description: "Please check your email to verify your account.",
-        });
+        return { error: authError };
       }
-      
-      return { error };
+
+      // Validate license key
+      const { data: keyRow, error: keyFetchError } = await supabase
+        .from('license_keys')
+        .select('*')
+        .eq('license_key', licenseKey)
+        .eq('is_used', false)
+        .single();
+
+      if (keyFetchError || !keyRow) {
+        // Roll back created auth user if license invalid
+        await supabase.auth.signOut();
+        toast({
+          title: "Invalid license key",
+          description: "Please check your license key and try again.",
+          variant: "destructive",
+        });
+        return { error: keyFetchError || new Error('Invalid license key') };
+      }
+
+      // Mark license as used
+      const { error: updateKeyError } = await supabase
+        .from('license_keys')
+        .update({ is_used: true, used_by: signUpData.user.id, used_at: new Date().toISOString() })
+        .eq('id', keyRow.id);
+
+      if (updateKeyError) {
+        toast({
+          title: "License update failed",
+          description: updateKeyError.message,
+          variant: "destructive",
+        });
+        return { error: updateKeyError };
+      }
+
+      // Create profile row
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: signUpData.user.id,
+          username,
+          license_key: licenseKey,
+          license_type: keyRow.license_type,
+        });
+
+      if (profileError) {
+        toast({
+          title: "Profile creation failed",
+          description: profileError.message,
+          variant: "destructive",
+        });
+        return { error: profileError };
+      }
+
+      toast({
+        title: "Account Created",
+        description: "Your account has been created successfully.",
+      });
+
+      return { error: null };
     } catch (error) {
       console.error("Sign up error:", error);
       return { error };
@@ -78,38 +132,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (username: string, password: string) => {
     try {
-      // First, get the email from username
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('username', username)
-        .single();
-
-      if (!profile) {
-        const error = new Error("Invalid username or password");
-        toast({
-          title: "Sign In Failed",
-          description: "Invalid username or password",
-          variant: "destructive",
-        });
-        return { error };
-      }
-
-      // Get the email from auth.users
-      const { data: userData } = await supabase.auth.admin.getUserById(profile.user_id);
-      
-      if (!userData.user?.email) {
-        const error = new Error("User not found");
-        toast({
-          title: "Sign In Failed",
-          description: "User not found",
-          variant: "destructive",
-        });
-        return { error };
-      }
+      // Generate the same synthetic email used at signup
+      const generatedEmail = `${username}@users.local`;
 
       const { error } = await supabase.auth.signInWithPassword({
-        email: userData.user.email,
+        email: generatedEmail,
         password,
       });
 

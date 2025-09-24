@@ -16,7 +16,6 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    email: "",
     username: "",
     password: "",
     licenseKey: ""
@@ -34,7 +33,7 @@ export default function Auth() {
 
     try {
       if (mode === "signup") {
-        await signUp(formData.email, formData.password, formData.username, formData.licenseKey);
+        await signUp(formData.username, formData.password, formData.licenseKey);
       } else {
         await signIn(formData.username, formData.password);
       }
@@ -70,20 +69,7 @@ export default function Auth() {
 
           <Card className="p-8">
             <form onSubmit={handleSubmit} className="space-y-6">
-              {mode === "signup" && (
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="your@email.com"
-                  />
-                </div>
-              )}
+              {/* Email removed - signup requires only username, password, license key */}
 
               <div className="space-y-2">
                 <Label htmlFor="username">Username</Label>
