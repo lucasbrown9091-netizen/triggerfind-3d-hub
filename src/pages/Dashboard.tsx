@@ -129,7 +129,8 @@ export default function Dashboard() {
       // Patterns
       const triggerNameRegex = /\bTrigger(Server)?Event\s*\(\s*(["'`])([^"'`]+)\2/gi;
       const triggerArgsRegex = /\bTrigger(Server)?Event\s*\(([^\)]*)\)/gi;
-      const eventCallRegex = /\bTrigger(Server)?Event\s*\([^)]*\)/gi;
+      // Match full call expressions, including across newlines inside arguments
+      const eventCallRegex = /\bTrigger(Server)?Event\s*\([\s\S]*?\)/gi;
       const lineServerRegex = /^\s*TriggerServerEvent\s*\([^\n]*\)/i;
       const lineClientRegex = /^\s*TriggerEvent\s*\([^\n]*\)/i;
       const autoKeywords = [
@@ -186,7 +187,7 @@ export default function Dashboard() {
       // event-call based collections (robust, regardless of line starts)
       let c: RegExpExecArray | null;
       while ((c = eventCallRegex.exec(allText)) !== null) {
-        const call = c[0].trim();
+        const call = c[0].replace(/\s+/g, ' ').trim().slice(0, 400);
         if (/^\s*TriggerServerEvent/i.test(call)) triggerLinesServer.push(call);
         else if (/^\s*TriggerEvent/i.test(call)) triggerLinesClient.push(call);
       }
