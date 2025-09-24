@@ -42,7 +42,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (username: string, password: string, licenseKey: string) => {
     try {
-      // We do not collect an email; generate a non-deliverable email from username
+      // 1) Validate username availability early
+      const { data: existingUserByUsername, error: usernameCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+
+      if (usernameCheckError) {
+        toast({
+          title: "Sign Up Failed",
+          description: "Could not verify username availability.",
+          variant: "destructive",
+        });
+        return { error: usernameCheckError };
+      }
+
+      if (existingUserByUsername) {
+        const error = new Error('Username already taken');
+        toast({
+          title: "Sign Up Failed",
+          description: "Username is already taken.",
+          variant: "destructive",
+        });
+        return { error };
+      }
+
+      // 2) Validate license key before creating auth user
+      const { data: keyRow, error: keyFetchError } = await supabase
+        .from('license_keys')
+        .select('*')
+        .eq('license_key', licenseKey)
+        .eq('is_used', false)
+        .single();
+
+      if (keyFetchError || !keyRow) {
+        toast({
+          title: "Invalid license key",
+          description: "Please check your license key and try again.",
+          variant: "destructive",
+        });
+        return { error: keyFetchError || new Error('Invalid license key') };
+      }
+
+      // 3) Create auth user with deterministic synthetic email from username
       const generatedEmail = `${username}@users.local`;
 
       const { data: signUpData, error: authError } = await supabase.auth.signUp({
@@ -57,34 +100,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (authError || !signUpData.user) {
+        const message = authError?.message || 'Unable to create user';
+        // Common cause: duplicate synthetic email when username already exists
         toast({
           title: "Sign Up Failed",
-          description: authError?.message || "Unable to create user",
+          description: message,
           variant: "destructive",
         });
-        return { error: authError };
+        return { error: authError || new Error(message) };
       }
 
-      // Validate license key
-      const { data: keyRow, error: keyFetchError } = await supabase
-        .from('license_keys')
-        .select('*')
-        .eq('license_key', licenseKey)
-        .eq('is_used', false)
-        .single();
-
-      if (keyFetchError || !keyRow) {
-        // Roll back created auth user if license invalid
-        await supabase.auth.signOut();
-        toast({
-          title: "Invalid license key",
-          description: "Please check your license key and try again.",
-          variant: "destructive",
-        });
-        return { error: keyFetchError || new Error('Invalid license key') };
-      }
-
-      // Mark license as used
+      // 4) Mark license as used
       const { error: updateKeyError } = await supabase
         .from('license_keys')
         .update({ is_used: true, used_by: signUpData.user.id, used_at: new Date().toISOString() })
@@ -99,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: updateKeyError };
       }
 
-      // Create profile row
+      // 5) Create profile row
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
