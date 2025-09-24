@@ -97,9 +97,8 @@ export default function Dashboard() {
         throw new Error('User profile not found');
       }
 
-      // Simulate upload process
+      // Create upload record
       const folderName = `dump_${Date.now()}`;
-      
       const { data, error } = await supabase
         .from('user_uploads')
         .insert({
@@ -113,22 +112,84 @@ export default function Dashboard() {
 
       if (error) throw error;
 
-      // Simulate scan results creation
-      const scanTypes = ['triggers', 'webhooks', 'locations', 'webhook_deleter'];
-      
-      for (const scanType of scanTypes) {
-        await supabase
-          .from('scan_results')
-          .insert({
-            upload_id: data.id,
-            user_id: profile.user_id,
-            scan_type: scanType,
-            results: {
-              count: Math.floor(Math.random() * 50),
-              items: [`Sample ${scanType} result 1`, `Sample ${scanType} result 2`],
-              processed_at: new Date().toISOString()
-            }
-          });
+      // Read files and run detections
+      const textFileExt = /\.(lua|js|ts|json|cfg|xml|yml|yaml|ini|md|log|txt|py|cs|cpp|c|java|rb|go)$/i;
+      const maxBytes = 2_000_000; // 2MB per file
+      const filesArray = Array.from(files);
+      const fileTexts: string[] = [];
+      for (const file of filesArray) {
+        if (textFileExt.test(file.name)) {
+          const blob = file.slice(0, maxBytes);
+          const text = await blob.text();
+          fileTexts.push(`\n/* FILE: ${file.name} */\n` + text);
+        }
+      }
+      const allText = fileTexts.join("\n\n");
+
+      // Patterns
+      const triggerNameRegex = /\bTrigger(Server)?Event\s*\(\s*(["'`])([^"'`]+)\2/gi;
+      const triggerArgsRegex = /\bTrigger(Server)?Event\s*\(([^\)]*)\)/gi;
+      const vector3Regex = /\bvector3\s*\([^\)]*\)/gi;
+      const vector2Regex = /\bvector2\s*\([^\)]*\)/gi;
+      const vector4Regex = /\bvector4\s*\([^\)]*\)/gi;
+      const webhookRegex = /https:\/\/discord\.com\/api\/webhooks\/[\w\-\/]+/gi;
+
+      // Detections
+      const triggerNames: string[] = [];
+      const triggerByArgs: string[] = [];
+      const v2: string[] = [];
+      const v3: string[] = [];
+      const v4: string[] = [];
+      const webhooks: string[] = [];
+
+      let m: RegExpExecArray | null;
+      while ((m = triggerNameRegex.exec(allText)) !== null) {
+        triggerNames.push(m[3]);
+      }
+      while ((m = triggerArgsRegex.exec(allText)) !== null) {
+        const args = m[2].trim().replace(/\s+/g, ' ').slice(0, 200);
+        triggerByArgs.push(args);
+      }
+      const pushAll = (re: RegExp, into: string[]) => {
+        let r: RegExpExecArray | null;
+        while ((r = re.exec(allText)) !== null) into.push(r[0].trim().slice(0, 200));
+      };
+      pushAll(vector2Regex, v2);
+      pushAll(vector3Regex, v3);
+      pushAll(vector4Regex, v4);
+      pushAll(webhookRegex, webhooks);
+
+      // Insert scan results
+      const now = new Date().toISOString();
+      const inserts = [
+        {
+          scan_type: 'triggers',
+          results: { parts: {
+            TriggerServerOrClientEvent: Array.from(new Set(triggerNames)).slice(0, 200),
+            AutoDetectedByArgs: Array.from(new Set(triggerByArgs)).slice(0, 200)
+          }, count: (new Set(triggerNames)).size, processed_at: now }
+        },
+        {
+          scan_type: 'locations',
+          results: { vector2: Array.from(new Set(v2)).slice(0, 200), vector3: Array.from(new Set(v3)).slice(0, 200), vector4: Array.from(new Set(v4)).slice(0, 200), processed_at: now }
+        },
+        {
+          scan_type: 'webhooks',
+          results: { items: Array.from(new Set(webhooks)).slice(0, 200), count: (new Set(webhooks)).size, processed_at: now }
+        },
+        {
+          scan_type: 'webhook_deleter',
+          results: { hint: 'Use the deleter UI to remove Discord webhooks', processed_at: now }
+        }
+      ];
+
+      for (const row of inserts) {
+        await supabase.from('scan_results').insert({
+          upload_id: data.id,
+          user_id: profile.user_id,
+          scan_type: row.scan_type,
+          results: row.results
+        });
       }
 
       toast({
