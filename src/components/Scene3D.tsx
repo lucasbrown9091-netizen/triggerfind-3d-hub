@@ -54,19 +54,7 @@ export function Scene3D() {
         
         <RotatingCube />
         <FloatingTorus />
-        
-        <Float speed={1} rotationIntensity={0.5} floatIntensity={0.3}>
-          <Text3D
-            font="/fonts/helvetiker_regular.typeface.json"
-            size={0.5}
-            height={0.1}
-            curveSegments={12}
-            position={[0, 1.5, 0]}
-          >
-            Evolution
-            <meshStandardMaterial color="cyan" />
-          </Text3D>
-        </Float>
+        {/* 3D text removed due to missing font asset in public/fonts */}
         
         <OrbitControls 
           enablePan={false} 

@@ -1,3 +1,33 @@
+# Node / Vite / TypeScript
+node_modules/
+dist/
+.vite/
+.turbo/
+.parcel-cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+supabase/.log
 # Logs
 logs
 *.log
