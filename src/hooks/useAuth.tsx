@@ -59,6 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // First, validate the license key before creating the user
       console.log("Validating license key:", normalizedLicense);
       
+      // Test if we can access the license_keys table at all
+      const { data: testData, error: testErr, count } = await supabase
+        .from('license_keys')
+        .select('*', { count: 'exact' })
+        .limit(1);
+      
+      console.log("License table access test:", { testData, testErr, count });
+      
       const { data: keyData, error: keyErr } = await supabase
         .from('license_keys')
         .select('id, is_used, expires_at, license_key')
