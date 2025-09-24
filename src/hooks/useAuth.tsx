@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+// Switched to custom API with JWT
 import { useToast } from "@/hooks/use-toast";
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: { id: string; username: string } | null;
+  session: { token: string } | null;
   signUp: (username: string, password: string, licenseKey: string) => Promise<{ error: any }>;
   signIn: (username: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -15,153 +14,45 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string } | null>(null);
+  const [session, setSession] = useState<{ token: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    const token = localStorage.getItem('jwt');
+    const username = localStorage.getItem('username');
+    const userId = localStorage.getItem('userId');
+    if (token && username && userId) {
+      setSession({ token });
+      setUser({ id: userId, username });
+    }
+    setLoading(false);
   }, []);
 
   const signUp = async (username: string, password: string, licenseKey: string) => {
     try {
-      // 1) Try to validate license key before creating auth user
-      const normalizedLicense = licenseKey.trim();
-      let keyRow: any | null = null;
-      let deferLicenseValidation = false;
-      {
-        const { data, error } = await supabase
-          .from('license_keys')
-          .select('id, is_used, license_type')
-          .eq('license_key', normalizedLicense)
-          .limit(1)
-          .maybeSingle();
-
-        if (error) {
-          // Defer license validation to post-auth for ANY pre-auth error (covers RLS, network, etc.)
-          deferLicenseValidation = true;
-        } else {
-          keyRow = data;
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/signup`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, licenseKey })
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          toast({ title: 'Sign Up Failed', description: data.error || 'Signup failed', variant: 'destructive' })
+          return { error: new Error(data.error || 'Signup failed') }
         }
+        localStorage.setItem('jwt', data.token)
+        localStorage.setItem('username', data.user.username)
+        localStorage.setItem('userId', data.user.id)
+        setSession({ token: data.token })
+        setUser(data.user)
+        toast({ title: 'Account Created', description: 'Your account has been created successfully.' })
+        return { error: null }
+      } catch (e) {
+        toast({ title: 'Sign Up Failed', description: 'Network error', variant: 'destructive' })
+        return { error: e }
       }
-      if (!deferLicenseValidation) {
-        if (!keyRow || keyRow.is_used) {
-          toast({
-            title: "Invalid license key",
-            description: "Please check your license key and try again.",
-            variant: "destructive",
-          });
-          return { error: new Error('Invalid license key') };
-        }
-      }
-
-      // 2) Create auth user with deterministic synthetic email from username
-      const generatedEmail = `${username}@users.local`;
-
-      const { data: signUpData, error: authError } = await supabase.auth.signUp({
-        email: generatedEmail,
-        password,
-        options: {
-          data: {
-            username,
-            license_key: licenseKey,
-          },
-        },
-      });
-
-      if (authError || !signUpData.user) {
-        // Common cause: duplicate synthetic email when username already exists
-        const raw = (authError?.message || '').toLowerCase();
-        const isDuplicate = raw.includes('duplicate') || raw.includes('already registered') || raw.includes('users_email_key');
-        const message = isDuplicate ? 'Username is already taken.' : (authError?.message || 'Unable to create user');
-        toast({
-          title: "Sign Up Failed",
-          description: message,
-          variant: "destructive",
-        });
-        return { error: authError || new Error(message) };
-      }
-
-      // 3) If license validation was deferred due to RLS, validate now as the authenticated user
-      if (deferLicenseValidation) {
-        const { data, error } = await supabase
-          .from('license_keys')
-          .select('id, is_used, license_type')
-          .eq('license_key', normalizedLicense)
-          .limit(1)
-          .maybeSingle();
-        if (error || !data || data.is_used) {
-          await supabase.auth.signOut();
-          toast({
-            title: "Invalid license key",
-            description: "Please check your license key and try again.",
-            variant: "destructive",
-          });
-          return { error: error || new Error('Invalid license key') };
-        }
-        keyRow = data;
-      }
-
-      // 4) Create profile row (RLS should allow the authenticated user to create their own profile)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: signUpData.user.id,
-          username,
-          license_key: normalizedLicense,
-          license_type: keyRow.license_type,
-        });
-
-      if (profileError) {
-        const message = profileError.message?.toLowerCase().includes('duplicate')
-          ? 'Username is already taken.'
-          : profileError.message;
-        toast({
-          title: "Profile creation failed",
-          description: message,
-          variant: "destructive",
-        });
-        return { error: profileError };
-      }
-
-      // 5) Mark license as used only after successful profile creation
-      const { error: updateKeyError } = await supabase
-        .from('license_keys')
-        .update({ is_used: true, used_by: signUpData.user.id, used_at: new Date().toISOString() })
-        .eq('id', keyRow.id);
-
-      if (updateKeyError) {
-        toast({
-          title: "License update failed",
-          description: updateKeyError.message,
-          variant: "destructive",
-        });
-        return { error: updateKeyError };
-      }
-
-      toast({
-        title: "Account Created",
-        description: "Your account has been created successfully.",
-      });
-
-      return { error: null };
     } catch (error) {
       console.error("Sign up error:", error);
       return { error };
@@ -170,23 +61,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (username: string, password: string) => {
     try {
-      // Generate the same synthetic email used at signup
-      const generatedEmail = `${username}@users.local`;
-
-      const { error } = await supabase.auth.signInWithPassword({
-        email: generatedEmail,
-        password,
-      });
-
-      if (error) {
-        toast({
-          title: "Sign In Failed",
-          description: error.message,
-          variant: "destructive",
-        });
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/auth/login`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          toast({ title: 'Sign In Failed', description: data.error || 'Invalid credentials', variant: 'destructive' })
+          return { error: new Error(data.error || 'Invalid credentials') }
+        }
+        localStorage.setItem('jwt', data.token)
+        localStorage.setItem('username', data.user.username)
+        localStorage.setItem('userId', data.user.id)
+        setSession({ token: data.token })
+        setUser(data.user)
+        return { error: null }
+      } catch (e) {
+        toast({ title: 'Sign In Failed', description: 'Network error', variant: 'destructive' })
+        return { error: e }
       }
-
-      return { error };
     } catch (error) {
       console.error("Sign in error:", error);
       toast({
@@ -199,14 +93,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
+    localStorage.removeItem('jwt')
+    localStorage.removeItem('username')
+    localStorage.removeItem('userId')
+    setSession(null)
+    setUser(null)
   };
 
   const value = {

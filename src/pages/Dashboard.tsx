@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileText, Globe, Trash2, Zap } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+// Using custom API instead of Supabase
 import { useToast } from "@/hooks/use-toast";
 
 interface Upload {
@@ -45,38 +45,40 @@ export default function Dashboard() {
   }, [selectedUpload]);
 
   const fetchUploads = async () => {
-    const { data, error } = await supabase
-      .from('user_uploads')
-      .select('*')
-      .order('uploaded_at', { ascending: false });
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch uploads",
-        variant: "destructive",
-      });
-    } else {
-      setUploads(data || []);
-      if (data && data.length > 0 && !selectedUpload) {
-        setSelectedUpload(data[0].id);
-      }
+    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/uploads`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('jwt') || ''}` }
+    })
+    if (!res.ok) {
+      toast({ title: 'Error', description: 'Failed to fetch uploads', variant: 'destructive' })
+      return
     }
+    const json = await res.json()
+    const data = (json.uploads || []).map((u: any) => ({
+      id: u._id,
+      folder_name: u.folderName,
+      file_count: u.fileCount,
+      uploaded_at: u.uploadedAt || u.createdAt
+    }))
+    setUploads(data)
+    if (data.length > 0 && !selectedUpload) setSelectedUpload(data[0].id)
   };
 
   const fetchScanResults = async (uploadId: string) => {
-    const { data, error } = await supabase
-      .from('scan_results')
-      .select('*')
-      .eq('upload_id', uploadId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error("Error fetching scan results:", error);
-      setScanResults([]);
-    } else {
-      setScanResults(data || []);
+    const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/scans?uploadId=${uploadId}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('jwt') || ''}` }
+    })
+    if (!res.ok) {
+      setScanResults([])
+      return
     }
+    const json = await res.json()
+    const data = (json.scans || []).map((s: any) => ({
+      id: s._id,
+      scan_type: s.scanType,
+      results: s.results,
+      created_at: s.createdAt
+    }))
+    setScanResults(data)
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,58 +88,20 @@ export default function Dashboard() {
     setUploading(true);
     
     try {
-      // Get current user's profile to get user_id
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (!profile) {
-        throw new Error('User profile not found');
-      }
-
-      // Simulate upload process
-      const folderName = `dump_${Date.now()}`;
-      
-      const { data, error } = await supabase
-        .from('user_uploads')
-        .insert({
-          user_id: profile.user_id,
-          folder_name: folderName,
-          upload_path: `/uploads/${folderName}`,
-          file_count: files.length,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Simulate scan results creation
-      const scanTypes = ['triggers', 'webhooks', 'locations', 'webhook_deleter'];
-      
-      for (const scanType of scanTypes) {
-        await supabase
-          .from('scan_results')
-          .insert({
-            upload_id: data.id,
-            user_id: profile.user_id,
-            scan_type: scanType,
-            results: {
-              count: Math.floor(Math.random() * 50),
-              items: [`Sample ${scanType} result 1`, `Sample ${scanType} result 2`],
-              processed_at: new Date().toISOString()
-            }
-          });
-      }
-
-      toast({
-        title: "Upload Successful",
-        description: `${files.length} files uploaded and processed`,
-      });
-
-      fetchUploads();
-      setSelectedUpload(data.id);
+      const folderName = `dump_${Date.now()}`
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/uploads`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('jwt') || ''}`
+        },
+        body: JSON.stringify({ folderName, uploadPath: `/uploads/${folderName}`, fileCount: files.length })
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const { upload } = await res.json()
+      toast({ title: 'Upload Successful', description: `${files.length} files uploaded and processed` })
+      fetchUploads()
+      setSelectedUpload(upload._id)
     } catch (error) {
       toast({
         title: "Upload Failed",
