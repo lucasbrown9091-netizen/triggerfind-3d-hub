@@ -58,7 +58,6 @@ export type Database = {
           id: string
           license_expires_at: string | null
           license_key: string
-          license_type: string
           updated_at: string
           user_id: string
           username: string
@@ -68,7 +67,6 @@ export type Database = {
           id?: string
           license_expires_at?: string | null
           license_key: string
-          license_type: string
           updated_at?: string
           user_id: string
           username: string
@@ -78,7 +76,6 @@ export type Database = {
           id?: string
           license_expires_at?: string | null
           license_key?: string
-          license_type?: string
           updated_at?: string
           user_id?: string
           username?: string
