@@ -57,12 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log("Attempting signup with:", { email: generatedEmail, username });
 
       // First, validate the license key before creating the user
+      console.log("Validating license key:", normalizedLicense);
+      
       const { data: keyData, error: keyErr } = await supabase
         .from('license_keys')
-        .select('id, is_used, license_type')
+        .select('id, is_used, expires_at, license_key')
         .eq('license_key', normalizedLicense)
         .limit(1)
         .maybeSingle();
+
+      console.log("License query result:", { keyData, keyErr });
 
       if (keyErr) {
         console.error("License validation error:", keyErr);
@@ -70,10 +74,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: keyErr };
       }
 
-      if (!keyData || keyData.is_used) {
-        toast({ title: "Invalid license key", description: "License key is invalid or already used.", variant: "destructive" });
-        return { error: new Error('Invalid or used license key') };
+      if (!keyData) {
+        console.log("License key not found in database");
+        toast({ title: "Invalid license key", description: "License key not found.", variant: "destructive" });
+        return { error: new Error('License key not found') };
       }
+
+      if (keyData.is_used) {
+        console.log("License key already used:", keyData);
+        toast({ title: "License key already used", description: "This license key has already been used.", variant: "destructive" });
+        return { error: new Error('License key already used') };
+      }
+
+      // Check if license key has expired
+      if (keyData.expires_at && new Date(keyData.expires_at) < new Date()) {
+        console.log("License key has expired:", keyData.expires_at);
+        toast({ title: "License key expired", description: "This license key has expired.", variant: "destructive" });
+        return { error: new Error('License key expired') };
+      }
+
+      console.log("License key validation successful:", keyData);
 
       // Now attempt to create the user
       const { data: signUpData, error: authError } = await supabase.auth.signUp({
@@ -82,7 +102,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: { 
           data: { 
             username, 
-            license_key: normalizedLicense 
+            license_key: normalizedLicense,
+            license_expires_at: keyData.expires_at
           } 
         },
       });
@@ -111,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
-          license_type: keyData.license_type,
+          license_expires_at: keyData.expires_at,
         });
 
       if (profileError) {
