@@ -14,7 +14,154 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      license_keys: {
+        Row: {
+          created_at: string
+          id: string
+          is_used: boolean
+          license_key: string
+          license_type: string
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_used?: boolean
+          license_key: string
+          license_type: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_used?: boolean
+          license_key?: string
+          license_type?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "license_keys_used_by_fkey"
+            columns: ["used_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          license_expires_at: string | null
+          license_key: string
+          license_type: string
+          updated_at: string
+          user_id: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          license_expires_at?: string | null
+          license_key: string
+          license_type: string
+          updated_at?: string
+          user_id: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          license_expires_at?: string | null
+          license_key?: string
+          license_type?: string
+          updated_at?: string
+          user_id?: string
+          username?: string
+        }
+        Relationships: []
+      }
+      scan_results: {
+        Row: {
+          created_at: string
+          id: string
+          results: Json
+          scan_type: string
+          upload_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          results?: Json
+          scan_type: string
+          upload_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          results?: Json
+          scan_type?: string
+          upload_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scan_results_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "user_uploads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scan_results_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      user_uploads: {
+        Row: {
+          file_count: number | null
+          folder_name: string
+          id: string
+          upload_path: string
+          uploaded_at: string
+          user_id: string
+        }
+        Insert: {
+          file_count?: number | null
+          folder_name: string
+          id?: string
+          upload_path: string
+          uploaded_at?: string
+          user_id: string
+        }
+        Update: {
+          file_count?: number | null
+          folder_name?: string
+          id?: string
+          upload_path?: string
+          uploaded_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_uploads_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
