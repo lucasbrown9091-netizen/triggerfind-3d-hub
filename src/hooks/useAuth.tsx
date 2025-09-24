@@ -42,21 +42,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (username: string, password: string, licenseKey: string) => {
     try {
-      // 1) Validate license key before creating auth user (allowed for anon)
-      const { data: keyRow, error: keyFetchError } = await supabase
-        .from('license_keys')
-        .select('*')
-        .eq('license_key', licenseKey)
-        .eq('is_used', false)
-        .single();
+      // 1) Try to validate license key before creating auth user
+      const normalizedLicense = licenseKey.trim();
+      let keyRow: any | null = null;
+      let deferLicenseValidation = false;
+      {
+        const { data, error } = await supabase
+          .from('license_keys')
+          .select('id, is_used, license_type')
+          .eq('license_key', normalizedLicense)
+          .limit(1)
+          .maybeSingle();
 
-      if (keyFetchError || !keyRow) {
-        toast({
-          title: "Invalid license key",
-          description: "Please check your license key and try again.",
-          variant: "destructive",
-        });
-        return { error: keyFetchError || new Error('Invalid license key') };
+        if (error) {
+          // If RLS prevents anon from reading, defer until after auth
+          if (String(error.message).toLowerCase().includes('permission') || String(error.message).toLowerCase().includes('not authorized')) {
+            deferLicenseValidation = true;
+          } else {
+            toast({
+              title: "License validation failed",
+              description: "Temporary error checking license. Please try again.",
+              variant: "destructive",
+            });
+            return { error };
+          }
+        } else {
+          keyRow = data;
+        }
+      }
+      if (!deferLicenseValidation) {
+        if (!keyRow || keyRow.is_used) {
+          toast({
+            title: "Invalid license key",
+            description: "Please check your license key and try again.",
+            variant: "destructive",
+          });
+          return { error: new Error('Invalid license key') };
+        }
       }
 
       // 2) Create auth user with deterministic synthetic email from username
@@ -84,13 +106,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: authError || new Error(message) };
       }
 
-      // 3) Create profile row (RLS should allow the authenticated user to create their own profile)
+      // 3) If license validation was deferred due to RLS, validate now as the authenticated user
+      if (deferLicenseValidation) {
+        const { data, error } = await supabase
+          .from('license_keys')
+          .select('id, is_used, license_type')
+          .eq('license_key', normalizedLicense)
+          .limit(1)
+          .maybeSingle();
+        if (error || !data || data.is_used) {
+          await supabase.auth.signOut();
+          toast({
+            title: "Invalid license key",
+            description: "Please check your license key and try again.",
+            variant: "destructive",
+          });
+          return { error: error || new Error('Invalid license key') };
+        }
+        keyRow = data;
+      }
+
+      // 4) Create profile row (RLS should allow the authenticated user to create their own profile)
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
           user_id: signUpData.user.id,
           username,
-          license_key: licenseKey,
+          license_key: normalizedLicense,
           license_type: keyRow.license_type,
         });
 
@@ -106,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: profileError };
       }
 
-      // 4) Mark license as used only after successful profile creation
+      // 5) Mark license as used only after successful profile creation
       const { error: updateKeyError } = await supabase
         .from('license_keys')
         .update({ is_used: true, used_by: signUpData.user.id, used_at: new Date().toISOString() })
