@@ -219,7 +219,32 @@ export default function Dashboard() {
   }
 
   const getResultsByType = (type: string) => {
-    return scanResults.find(result => result.scan_type === type)?.results || { count: 0, items: [] };
+    const raw = scanResults.find(result => result.scan_type === type)?.results || {};
+    if (type === 'triggers') {
+      const names: string[] = raw.parts?.TriggerServerOrClientEvent || [];
+      const byArgs: string[] = raw.parts?.AutoDetectedByArgs || [];
+      const items = [...names, ...byArgs];
+      return { count: raw.count ?? items.length, items };
+    }
+    if (type === 'locations') {
+      const v2: string[] = raw.vector2 || [];
+      const v3: string[] = raw.vector3 || [];
+      const v4: string[] = raw.vector4 || [];
+      const items = [
+        ...v3.map((s: string) => `vector3: ${s}`),
+        ...v2.map((s: string) => `vector2: ${s}`),
+        ...v4.map((s: string) => `vector4: ${s}`),
+      ];
+      return { count: items.length, items };
+    }
+    if (type === 'webhooks') {
+      const items: string[] = raw.items || [];
+      return { count: raw.count ?? items.length, items };
+    }
+    if (type === 'webhook_deleter') {
+      return { count: 0, items: [] };
+    }
+    return { count: 0, items: [] };
   };
 
   const triggerResults = getResultsByType('triggers');
