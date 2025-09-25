@@ -471,7 +471,7 @@ export default function Dashboard() {
               </TabsList>
 
               <TabsContent value="triggers" className="mt-6">
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-medium">Detected Triggers</h3>
                     <Badge>{triggerResults.count} found</Badge>
@@ -479,13 +479,68 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <Input placeholder="Search triggers..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
-                  <div className="grid gap-4">
-                    {triggerResults.items?.filter((s: string) => s.toLowerCase().includes(searchQuery.toLowerCase())).map((item: string, index: number) => (
-                      <Card key={index} className="p-4">
-                        <pre className="text-xs whitespace-pre-wrap break-words">{item}</pre>
-                      </Card>
-                    )) || <p className="text-muted-foreground">No triggers detected</p>}
-                  </div>
+
+                  {(() => {
+                    const raw = scanResults.find(r => r.scan_type === 'triggers')?.results || {} as any;
+                    const parts = raw.parts || {} as any;
+                    const server = (parts.TriggerServerEvent || []) as {file:string;text:string}[];
+                    const client = (parts.TriggerEvent || []) as {file:string;text:string}[];
+                    const autoKW = (parts.AutoDetectedTriggers || []) as {file:string;text:string}[];
+                    const argKW = (parts.TriggersDetectedByArguments || []) as {file:string;text:string}[];
+                    const matches = (x: {file:string;text:string}) => (x.file + "\n" + x.text).toLowerCase().includes(searchQuery.toLowerCase());
+
+                    return (
+                      <div className="space-y-8">
+                        <div>
+                          <h4 className="font-semibold mb-2">TriggerServerEvent</h4>
+                          <div className="grid gap-3">
+                            {server.filter(matches).map((x, idx) => (
+                              <Card key={`srv-${idx}`} className="p-3">
+                                <pre className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              </Card>
+                            ))}
+                            {server.length === 0 && <p className="text-muted-foreground">No server triggers</p>}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold mb-2">TriggerEvent</h4>
+                          <div className="grid gap-3">
+                            {client.filter(matches).map((x, idx) => (
+                              <Card key={`cli-${idx}`} className="p-3">
+                                <pre className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              </Card>
+                            ))}
+                            {client.length === 0 && <p className="text-muted-foreground">No client triggers</p>}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold mb-2">Auto detected triggers</h4>
+                          <div className="grid gap-3">
+                            {autoKW.filter(matches).map((x, idx) => (
+                              <Card key={`auto-${idx}`} className="p-3">
+                                <pre className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              </Card>
+                            ))}
+                            {autoKW.length === 0 && <p className="text-muted-foreground">No auto detected triggers</p>}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold mb-2">Auto detected triggers by arguments</h4>
+                          <div className="grid gap-3">
+                            {argKW.filter(matches).map((x, idx) => (
+                              <Card key={`arg-${idx}`} className="p-3">
+                                <pre className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              </Card>
+                            ))}
+                            {argKW.length === 0 && <p className="text-muted-foreground">No argument-detected triggers</p>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </TabsContent>
 
