@@ -412,8 +412,13 @@ export default function Dashboard() {
                       if (error) {
                         toast({ title: 'Rename failed', description: error.message, variant: 'destructive' });
                       } else {
+                        // Optimistic UI update
+                        setUploads(prev => prev.map(u => u.id === upload.id ? { ...u, folder_name: trimmed } : u));
+                        if (selectedUpload === upload.id) {
+                          // no change needed to selection, but ensures re-render
+                          setSelectedUpload(upload.id);
+                        }
                         toast({ title: 'Renamed', description: 'Folder renamed successfully' });
-                        fetchUploads();
                       }
                     }}>Rename</Button>
                     <Button size="sm" variant="destructive" onClick={async () => {
