@@ -565,7 +565,7 @@ export default function Dashboard() {
               </TabsContent>
 
               <TabsContent value="locations" className="mt-6">
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-medium">Location Data</h3>
                     <Badge>{locationResults.count} found</Badge>
@@ -573,13 +573,54 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <Input placeholder="Search locations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
-                  <div className="grid gap-4">
-                    {locationResults.items?.filter((s: string) => s.toLowerCase().includes(searchQuery.toLowerCase())).map((item: string, index: number) => (
-                      <Card key={index} className="p-4">
-                        <pre className="text-xs whitespace-pre-wrap break-words">{item}</pre>
-                      </Card>
-                    )) || <p className="text-muted-foreground">No location data found</p>}
-                  </div>
+
+                  {(() => {
+                    const raw = scanResults.find(r => r.scan_type === 'locations')?.results || {} as any;
+                    const v2 = (raw.vector2 || []) as {file:string;text:string}[];
+                    const v3 = (raw.vector3 || []) as {file:string;text:string}[];
+                    const v4 = (raw.vector4 || []) as {file:string;text:string}[];
+                    const matches = (x: {file:string;text:string}) => (x.file + "\n" + x.text).toLowerCase().includes(searchQuery.toLowerCase());
+                    return (
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        <Card className="p-3">
+                          <h4 className="font-semibold mb-2">vector3</h4>
+                          <div className="h-96 overflow-auto space-y-2">
+                            {v3.filter(matches).map((x, idx) => (
+                              <Card key={`v3-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
+                            ))}
+                            {v3.length === 0 && <p className="text-muted-foreground">No vector3 entries</p>}
+                          </div>
+                        </Card>
+                        <Card className="p-3">
+                          <h4 className="font-semibold mb-2">vector2</h4>
+                          <div className="h-96 overflow-auto space-y-2">
+                            {v2.filter(matches).map((x, idx) => (
+                              <Card key={`v2-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
+                            ))}
+                            {v2.length === 0 && <p className="text-muted-foreground">No vector2 entries</p>}
+                          </div>
+                        </Card>
+                        <Card className="p-3">
+                          <h4 className="font-semibold mb-2">vector4</h4>
+                          <div className="h-96 overflow-auto space-y-2">
+                            {v4.filter(matches).map((x, idx) => (
+                              <Card key={`v4-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
+                            ))}
+                            {v4.length === 0 && <p className="text-muted-foreground">No vector4 entries</p>}
+                          </div>
+                        </Card>
+                      </div>
+                    );
+                  })()}
                 </div>
               </TabsContent>
 
