@@ -31,6 +31,12 @@ export default function Dashboard() {
   const [selectedUpload, setSelectedUpload] = useState<string | null>(null);
   const [scanResults, setScanResults] = useState<ScanResult[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("triggers");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [deletingWebhook, setDeletingWebhook] = useState(false);
+  const [webhookStatus, setWebhookStatus] = useState<"idle"|"success"|"error">("idle");
+  const [webhookError, setWebhookError] = useState("");
 
   useEffect(() => {
     if (user) {
@@ -112,19 +118,19 @@ export default function Dashboard() {
 
       if (error) throw error;
 
-      // Read files and run detections
+      // Read files and run detections, capturing file paths
       const textFileExt = /\.(lua|js|ts|json|cfg|xml|yml|yaml|ini|md|log|txt|py|cs|cpp|c|java|rb|go)$/i;
       const maxBytes = 2_000_000; // 2MB per file
       const filesArray = Array.from(files);
-      const fileTexts: string[] = [];
+      const perFile: { path: string; text: string }[] = [];
       for (const file of filesArray) {
         if (textFileExt.test(file.name)) {
           const blob = file.slice(0, maxBytes);
           const text = await blob.text();
-          fileTexts.push(`\n/* FILE: ${file.name} */\n` + text);
+          perFile.push({ path: (file as any).webkitRelativePath || file.name, text });
         }
       }
-      const allText = fileTexts.join("\n\n");
+      const allText = perFile.map(f => `\n/* FILE: ${f.path} */\n${f.text}`).join("\n\n");
 
       // Patterns
       const triggerNameRegex = /\bTrigger(Server)?Event\s*\(\s*(["'`])([^"'`]+)\2/gi;
@@ -164,80 +170,79 @@ export default function Dashboard() {
       const vector4Regex = /\bvector4\s*\([^\)]*\)/gi;
       const webhookRegex = /https:\/\/discord\.com\/api\/webhooks\/[\w\-\/]+/gi;
 
-      // Detections
-      const triggerNames: string[] = [];
-      const triggerByArgs: string[] = [];
-      const triggerLinesServer: string[] = [];
-      const triggerLinesClient: string[] = [];
-      const triggerAutoByKeywords: string[] = [];
-      const triggerByArgKeywords: string[] = [];
-      const v2: string[] = [];
-      const v3: string[] = [];
-      const v4: string[] = [];
-      const webhooks: string[] = [];
+      // Detections with file paths
+      type Found = { file: string; text: string };
+      const triggerLinesServer: Found[] = [];
+      const triggerLinesClient: Found[] = [];
+      const triggerAutoByKeywords: Found[] = [];
+      const triggerByArgKeywords: Found[] = [];
+      const v2: Found[] = [];
+      const v3: Found[] = [];
+      const v4: Found[] = [];
+      const webhooks: Found[] = [];
 
-      let m: RegExpExecArray | null;
-      while ((m = triggerNameRegex.exec(allText)) !== null) {
-        triggerNames.push(m[3]);
-      }
-      while ((m = triggerArgsRegex.exec(allText)) !== null) {
-        const args = m[2].trim().replace(/\s+/g, ' ').slice(0, 400);
-        triggerByArgs.push(args);
-      }
-      // event-call based collections (robust, regardless of line starts)
-      let c: RegExpExecArray | null;
-      while ((c = eventCallRegex.exec(allText)) !== null) {
-        const call = c[0].replace(/\s+/g, ' ').trim().slice(0, 400);
-        if (/^\s*TriggerServerEvent/i.test(call)) triggerLinesServer.push(call);
-        else if (/^\s*TriggerEvent/i.test(call)) triggerLinesClient.push(call);
-      }
-
-      // line-based collections
-      const lines = allText.split(/\r?\n/);
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (lineServerRegex.test(trimmed)) triggerLinesServer.push(trimmed);
-        if (lineClientRegex.test(trimmed)) triggerLinesClient.push(trimmed);
-
-        const lower = trimmed.toLowerCase();
-        if (autoKeywords.some(k => lower.includes(k.toLowerCase()))) {
-          triggerAutoByKeywords.push(trimmed);
+      // Collect per-file to attach file path
+      for (const { path, text } of perFile) {
+        // event-call based
+        let c: RegExpExecArray | null;
+        while ((c = eventCallRegex.exec(text)) !== null) {
+          const call = c[0].replace(/\s+/g, ' ').trim().slice(0, 400);
+          if (/^\s*TriggerServerEvent/i.test(call)) triggerLinesServer.push({ file: path, text: call });
+          else if (/^\s*TriggerEvent/i.test(call)) triggerLinesClient.push({ file: path, text: call });
         }
-        if ((/^\s*triggerserverevent|^\s*triggerevent/i).test(trimmed) && argKeywords.some(k => lower.includes(k))) {
-          triggerByArgKeywords.push(trimmed);
+        // line-based keywords
+        const lines = text.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          const lower = trimmed.toLowerCase();
+          if (autoKeywords.some(k => lower.includes(k.toLowerCase()))) {
+            triggerAutoByKeywords.push({ file: path, text: trimmed.slice(0, 400) });
+          }
+          if ((/^\s*triggerserverevent|^\s*triggerevent/i).test(trimmed) && argKeywords.some(k => lower.includes(k))) {
+            triggerByArgKeywords.push({ file: path, text: trimmed.slice(0, 400) });
+          }
         }
+        // vectors/webhooks
+        const collect = (re: RegExp, into: Found[]) => {
+          let r: RegExpExecArray | null;
+          while ((r = re.exec(text)) !== null) into.push({ file: path, text: r[0].trim().slice(0, 200) });
+        };
+        collect(vector2Regex, v2);
+        collect(vector3Regex, v3);
+        collect(vector4Regex, v4);
+        collect(webhookRegex, webhooks);
       }
-      const pushAll = (re: RegExp, into: string[]) => {
-        let r: RegExpExecArray | null;
-        while ((r = re.exec(allText)) !== null) into.push(r[0].trim().slice(0, 200));
-      };
-      pushAll(vector2Regex, v2);
-      pushAll(vector3Regex, v3);
-      pushAll(vector4Regex, v4);
-      pushAll(webhookRegex, webhooks);
 
       // Insert scan results
       const now = new Date().toISOString();
-      // de-duplicate
-      const uniq = (arr: string[]) => Array.from(new Set(arr));
+      // de-duplicate (by file+text)
+      const uniqBy = (arr: Found[]) => {
+        const seen = new Set<string>();
+        const out: Found[] = [];
+        for (const it of arr) {
+          const key = `${it.file}|${it.text}`;
+          if (!seen.has(key)) { seen.add(key); out.push(it); }
+        }
+        return out;
+      };
       const inserts = [
         {
           scan_type: 'triggers',
           results: { parts: {
-            TriggerServerEvent: uniq(triggerLinesServer).slice(0, 2000),
-            TriggerEvent: uniq(triggerLinesClient).slice(0, 2000),
-            AutoDetectedTriggers: uniq(triggerAutoByKeywords).slice(0, 2000),
-            TriggersDetectedByArguments: uniq(triggerByArgKeywords).slice(0, 2000)
+            TriggerServerEvent: uniqBy(triggerLinesServer).slice(0, 2000),
+            TriggerEvent: uniqBy(triggerLinesClient).slice(0, 2000),
+            AutoDetectedTriggers: uniqBy(triggerAutoByKeywords).slice(0, 2000),
+            TriggersDetectedByArguments: uniqBy(triggerByArgKeywords).slice(0, 2000)
           },
           processed_at: now }
         },
         {
           scan_type: 'locations',
-          results: { vector2: Array.from(new Set(v2)).slice(0, 200), vector3: Array.from(new Set(v3)).slice(0, 200), vector4: Array.from(new Set(v4)).slice(0, 200), processed_at: now }
+          results: { vector2: uniqBy(v2).slice(0, 1000), vector3: uniqBy(v3).slice(0, 1000), vector4: uniqBy(v4).slice(0, 1000), processed_at: now }
         },
         {
           scan_type: 'webhooks',
-          results: { items: Array.from(new Set(webhooks)).slice(0, 200), count: (new Set(webhooks)).size, processed_at: now }
+          results: { items: uniqBy(webhooks).slice(0, 1000), processed_at: now }
         },
         {
           scan_type: 'webhook_deleter',
@@ -283,29 +288,32 @@ export default function Dashboard() {
   const getResultsByType = (type: string) => {
     const raw = scanResults.find(result => result.scan_type === type)?.results || {};
     if (type === 'triggers') {
-      const serverLines: string[] = raw.parts?.TriggerServerEvent || [];
-      const clientLines: string[] = raw.parts?.TriggerEvent || [];
-      const autoByKeywords: string[] = raw.parts?.AutoDetectedTriggers || [];
-      const byArgKeywords: string[] = raw.parts?.TriggersDetectedByArguments || [];
+      const serverLines: {file:string;text:string}[] = raw.parts?.TriggerServerEvent || [];
+      const clientLines: {file:string;text:string}[] = raw.parts?.TriggerEvent || [];
+      const autoByKeywords: {file:string;text:string}[] = raw.parts?.AutoDetectedTriggers || [];
+      const byArgKeywords: {file:string;text:string}[] = raw.parts?.TriggersDetectedByArguments || [];
+      const join = (arr: {file:string;text:string}[]) => arr.map(x => `${x.file}\n${x.text}`);
       return {
         count: (serverLines.length + clientLines.length + autoByKeywords.length + byArgKeywords.length),
-        items: [...serverLines, ...clientLines, ...autoByKeywords, ...byArgKeywords]
+        items: [...join(serverLines), ...join(clientLines), ...join(autoByKeywords), ...join(byArgKeywords)]
       };
     }
     if (type === 'locations') {
-      const v2: string[] = raw.vector2 || [];
-      const v3: string[] = raw.vector3 || [];
-      const v4: string[] = raw.vector4 || [];
+      const v2: {file:string;text:string}[] = raw.vector2 || [];
+      const v3: {file:string;text:string}[] = raw.vector3 || [];
+      const v4: {file:string;text:string}[] = raw.vector4 || [];
+      const join = (label: string, arr: {file:string;text:string}[]) => arr.map(x => `${x.file}\n${x.text}`);
       const items = [
-        ...v3.map((s: string) => `vector3: ${s}`),
-        ...v2.map((s: string) => `vector2: ${s}`),
-        ...v4.map((s: string) => `vector4: ${s}`),
+        ...join('vector3', v3),
+        ...join('vector2', v2),
+        ...join('vector4', v4),
       ];
       return { count: items.length, items };
     }
     if (type === 'webhooks') {
-      const items: string[] = raw.items || [];
-      return { count: raw.count ?? items.length, items };
+      const items: {file:string;text:string}[] = raw.items || [];
+      const joined = items.map(x => `${x.file}\n${x.text}`);
+      return { count: joined.length, items: joined };
     }
     if (type === 'webhook_deleter') {
       return { count: 0, items: [] };
@@ -401,7 +409,7 @@ export default function Dashboard() {
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-6">Analysis Results</h2>
             
-            <Tabs defaultValue="triggers" className="w-full">
+            <Tabs defaultValue="triggers" className="w-full" onValueChange={setActiveTab}>
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="triggers" className="flex items-center">
                   <Zap className="mr-2 h-4 w-4" />
@@ -427,10 +435,13 @@ export default function Dashboard() {
                     <h3 className="text-lg font-medium">Detected Triggers</h3>
                     <Badge>{triggerResults.count} found</Badge>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Input placeholder="Search triggers..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                  </div>
                   <div className="grid gap-4">
-                    {triggerResults.items?.map((item: string, index: number) => (
+                    {triggerResults.items?.filter((s: string) => s.toLowerCase().includes(searchQuery.toLowerCase())).map((item: string, index: number) => (
                       <Card key={index} className="p-4">
-                        <p className="text-sm">{item}</p>
+                        <pre className="text-xs whitespace-pre-wrap break-words">{item}</pre>
                       </Card>
                     )) || <p className="text-muted-foreground">No triggers detected</p>}
                   </div>
@@ -443,10 +454,13 @@ export default function Dashboard() {
                     <h3 className="text-lg font-medium">Webhook Analysis</h3>
                     <Badge>{webhookResults.count} found</Badge>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Input placeholder="Search webhooks..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                  </div>
                   <div className="grid gap-4">
-                    {webhookResults.items?.map((item: string, index: number) => (
+                    {webhookResults.items?.filter((s: string) => s.toLowerCase().includes(searchQuery.toLowerCase())).map((item: string, index: number) => (
                       <Card key={index} className="p-4">
-                        <p className="text-sm">{item}</p>
+                        <pre className="text-xs whitespace-pre-wrap break-words">{item}</pre>
                       </Card>
                     )) || <p className="text-muted-foreground">No webhooks detected</p>}
                   </div>
@@ -459,10 +473,13 @@ export default function Dashboard() {
                     <h3 className="text-lg font-medium">Location Data</h3>
                     <Badge>{locationResults.count} found</Badge>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Input placeholder="Search locations..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                  </div>
                   <div className="grid gap-4">
-                    {locationResults.items?.map((item: string, index: number) => (
+                    {locationResults.items?.filter((s: string) => s.toLowerCase().includes(searchQuery.toLowerCase())).map((item: string, index: number) => (
                       <Card key={index} className="p-4">
-                        <p className="text-sm">{item}</p>
+                        <pre className="text-xs whitespace-pre-wrap break-words">{item}</pre>
                       </Card>
                     )) || <p className="text-muted-foreground">No location data found</p>}
                   </div>
@@ -472,19 +489,29 @@ export default function Dashboard() {
               <TabsContent value="deleter" className="mt-6">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium">Webhook Deletion Candidates</h3>
-                    <Badge>{deleterResults.count} found</Badge>
+                    <h3 className="text-lg font-medium">Webhook Deleter</h3>
                   </div>
-                  <div className="grid gap-4">
-                    {deleterResults.items?.map((item: string, index: number) => (
-                      <Card key={index} className="p-4 flex items-center justify-between">
-                        <p className="text-sm">{item}</p>
-                        <Button size="sm" variant="destructive">
-                          Delete
-                        </Button>
-                      </Card>
-                    )) || <p className="text-muted-foreground">No deletion candidates found</p>}
+                  <div className="flex items-center gap-2">
+                    <Input placeholder="Enter Discord webhook URL" value={webhookUrl} onChange={e => { setWebhookUrl(e.target.value); setWebhookStatus('idle'); setWebhookError(''); }} />
+                    <Button disabled={deletingWebhook} onClick={async () => {
+                      if (!webhookUrl) { setWebhookStatus('error'); setWebhookError('Please enter a webhook URL.'); return; }
+                      const regex = new RegExp('^https://([a-z0-9-]+\\.)?discord\\.com/api/.*');
+                      if (!regex.test(webhookUrl)) { setWebhookStatus('error'); setWebhookError('Not a valid Discord webhook URL.'); return; }
+                      setDeletingWebhook(true);
+                      try {
+                        const resp = await fetch(webhookUrl, { method: 'DELETE' });
+                        if (resp.status === 404) throw new Error('This webhook does not exist (maybe already deleted).');
+                        if (!resp.ok) throw new Error('Failed to delete webhook.');
+                        setWebhookStatus('success'); setWebhookUrl('');
+                      } catch (err: any) {
+                        setWebhookStatus('error'); setWebhookError(err?.message || 'Unknown error');
+                      } finally {
+                        setDeletingWebhook(false);
+                      }
+                    }}>Delete webhook</Button>
                   </div>
+                  {webhookStatus === 'error' && <p className="text-sm text-red-500">{webhookError}</p>}
+                  {webhookStatus === 'success' && <p className="text-sm text-green-500">Webhook deleted.</p>}
                 </div>
               </TabsContent>
             </Tabs>
