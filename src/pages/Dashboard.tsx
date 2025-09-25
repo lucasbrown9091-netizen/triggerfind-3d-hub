@@ -386,18 +386,59 @@ export default function Dashboard() {
               {uploads.map((upload) => (
                 <Card
                   key={upload.id}
-                  className={`p-4 cursor-pointer transition-colors ${
+                  className={`p-4 transition-colors ${
                     selectedUpload === upload.id ? 'ring-2 ring-primary' : ''
                   }`}
-                  onClick={() => setSelectedUpload(upload.id)}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium truncate">{upload.folder_name}</h3>
+                    <h3 className="font-medium truncate cursor-pointer" onClick={() => setSelectedUpload(upload.id)}>
+                      {upload.folder_name}
+                    </h3>
                     <Badge variant="outline">{upload.file_count} files</Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground mb-3">
                     {new Date(upload.uploaded_at).toLocaleDateString()}
                   </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={async () => {
+                      const newName = prompt('Rename folder to:', upload.folder_name);
+                      if (!newName) return;
+                      const trimmed = newName.trim();
+                      if (!trimmed || trimmed === upload.folder_name) return;
+                      const { error } = await supabase
+                        .from('user_uploads')
+                        .update({ folder_name: trimmed })
+                        .eq('id', upload.id);
+                      if (error) {
+                        toast({ title: 'Rename failed', description: error.message, variant: 'destructive' });
+                      } else {
+                        toast({ title: 'Renamed', description: 'Folder renamed successfully' });
+                        fetchUploads();
+                      }
+                    }}>Rename</Button>
+                    <Button size="sm" variant="destructive" onClick={async () => {
+                      if (!confirm('Delete this upload and its results?')) return;
+                      const { error: e1 } = await supabase
+                        .from('scan_results')
+                        .delete()
+                        .eq('upload_id', upload.id);
+                      if (e1) {
+                        toast({ title: 'Delete failed', description: e1.message, variant: 'destructive' });
+                        return;
+                      }
+                      const { error: e2 } = await supabase
+                        .from('user_uploads')
+                        .delete()
+                        .eq('id', upload.id);
+                      if (e2) {
+                        toast({ title: 'Delete failed', description: e2.message, variant: 'destructive' });
+                        return;
+                      }
+                      toast({ title: 'Deleted', description: 'Upload deleted' });
+                      fetchUploads();
+                      if (selectedUpload === upload.id) setSelectedUpload(null);
+                    }}>Delete</Button>
+                  </div>
                 </Card>
               ))}
             </div>
