@@ -495,7 +495,10 @@ export default function Dashboard() {
                           <h4 className="font-semibold mb-2">TriggerServerEvent</h4>
                           <div className="h-96 overflow-auto space-y-2">
                             {server.filter(matches).map((x, idx) => (
-                              <pre key={`srv-${idx}`} className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              <Card key={`srv-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
                             ))}
                             {server.length === 0 && <p className="text-muted-foreground">No server triggers</p>}
                           </div>
@@ -504,7 +507,10 @@ export default function Dashboard() {
                           <h4 className="font-semibold mb-2">TriggerEvent</h4>
                           <div className="h-96 overflow-auto space-y-2">
                             {client.filter(matches).map((x, idx) => (
-                              <pre key={`cli-${idx}`} className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              <Card key={`cli-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
                             ))}
                             {client.length === 0 && <p className="text-muted-foreground">No client triggers</p>}
                           </div>
@@ -513,7 +519,10 @@ export default function Dashboard() {
                           <h4 className="font-semibold mb-2">Auto detected triggers</h4>
                           <div className="h-96 overflow-auto space-y-2">
                             {autoKW.filter(matches).map((x, idx) => (
-                              <pre key={`auto-${idx}`} className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              <Card key={`auto-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
                             ))}
                             {autoKW.length === 0 && <p className="text-muted-foreground">No auto detected triggers</p>}
                           </div>
@@ -522,7 +531,10 @@ export default function Dashboard() {
                           <h4 className="font-semibold mb-2">Auto detected triggers by arguments</h4>
                           <div className="h-96 overflow-auto space-y-2">
                             {argKW.filter(matches).map((x, idx) => (
-                              <pre key={`arg-${idx}`} className="text-xs whitespace-pre-wrap break-words">{`${x.file}\n${x.text}`}</pre>
+                              <Card key={`arg-${idx}`} className="p-2">
+                                <p className="text-[11px] text-muted-foreground mb-1 break-words">{x.file}</p>
+                                <pre className="text-xs whitespace-pre-wrap break-words">{x.text}</pre>
+                              </Card>
                             ))}
                             {argKW.length === 0 && <p className="text-muted-foreground">No argument-detected triggers</p>}
                           </div>
