@@ -21,3 +21,15 @@ angelicxs-CivilianJobs:Server:GainItem
 t1ger_lib:server:addItem
 CPT_Raids:Server:GiveItem
 mc9-coretto:server:addItem
+Wrapper:AddMoney
+player:giveItem
+ry-vehiclerental:giveMoney
+jg-mechanic:client:input-shop-purchase-qty
+hg-wheel:server:giveitem
+devcore_smokev2:server:AddItem
+gaba-logging:server:addItem
+ez_lib:server:AddItem
+brutal_truck_robbery:server:AddItem
+jim-pizzathis:server:toggleItem
+weedroll:additem
+jim-bakery:server:toggleItem

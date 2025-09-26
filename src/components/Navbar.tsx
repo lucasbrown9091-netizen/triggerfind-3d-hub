@@ -2,13 +2,45 @@ import { Link, useLocation } from "react-router-dom";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Shield } from "lucide-react";
 
 export function Navbar() {
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const isActive = (path: string) => {
     return location.pathname === path;
+  };
+
+  useEffect(() => {
+    checkAdminStatus();
+  }, [user]);
+
+  const checkAdminStatus = async () => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('admin_profiles')
+        .select('is_admin')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (error) {
+        console.error("Admin check error:", error);
+        return;
+      }
+      
+      setIsAdmin(data?.is_admin || false);
+    } catch (error) {
+      console.error("Admin check error:", error);
+    }
   };
 
   return (
@@ -56,6 +88,17 @@ export function Navbar() {
               }`}
             >
               Dashboard
+            </Link>
+          )}
+          {user && isAdmin && (
+            <Link
+              to="/admin"
+              className={`transition-colors hover:text-primary flex items-center gap-1 ${
+                isActive("/admin") ? "text-primary" : "text-muted-foreground"
+              }`}
+            >
+              <Shield className="h-4 w-4" />
+              Admin
             </Link>
           )}
         </div>

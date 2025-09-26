@@ -61,6 +61,10 @@ export type Database = {
           updated_at: string
           user_id: string
           username: string
+          locked_ip: string | null
+          ip_lock_enabled: boolean
+          last_ip: string | null
+          ip_updated_at: string | null
         }
         Insert: {
           created_at?: string
@@ -70,6 +74,10 @@ export type Database = {
           updated_at?: string
           user_id: string
           username: string
+          locked_ip?: string | null
+          ip_lock_enabled?: boolean
+          last_ip?: string | null
+          ip_updated_at?: string | null
         }
         Update: {
           created_at?: string
@@ -79,8 +87,44 @@ export type Database = {
           updated_at?: string
           user_id?: string
           username?: string
+          locked_ip?: string | null
+          ip_lock_enabled?: boolean
+          last_ip?: string | null
+          ip_updated_at?: string | null
         }
         Relationships: []
+      }
+      admin_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          is_admin: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          is_admin?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          is_admin?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       scan_results: {
         Row: {
@@ -164,7 +208,29 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      update_user_ip: {
+        Args: {
+          user_id_param: string
+        }
+        Returns: void
+      }
+      reset_ip_lock: {
+        Args: {
+          target_user_id: string
+          admin_user_id: string
+        }
+        Returns: boolean
+      }
+      check_ip_lock: {
+        Args: {
+          user_id_param: string
+        }
+        Returns: boolean
+      }
+      get_client_ip: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

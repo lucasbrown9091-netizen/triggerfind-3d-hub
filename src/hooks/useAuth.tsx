@@ -132,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
+          ip_lock_enabled: true,
         } as any, { onConflict: 'user_id' })
         .select()
         .single();
@@ -160,6 +161,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: updateKeyError };
       }
 
+      // Set initial IP for the new user
+      try {
+        const { error: ipError } = await supabase.rpc('update_user_ip', {
+          user_id_param: signUpData.user.id
+        });
+        
+        if (ipError) {
+          console.error("Initial IP setting error:", ipError);
+          // Don't fail signup for IP errors, just log it
+        }
+      } catch (ipError) {
+        console.error("Initial IP setting error:", ipError);
+        // Don't fail signup for IP errors, just log it
+      }
+
       toast({ title: "Account Created", description: "Your account has been created successfully." });
       return { error: null };
     } catch (error) {
@@ -179,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const generatedEmail = `${username}@users.local`;
       console.log("Attempting signin with:", { email: generatedEmail });
       
-      const { error } = await supabase.auth.signInWithPassword({ 
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({ 
         email: generatedEmail, 
         password 
       });
@@ -187,8 +203,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) {
         console.error("Sign in error:", error);
         toast({ title: "Sign In Failed", description: error.message, variant: "destructive" });
+        return { error };
       }
-      return { error };
+
+      // If sign in successful, update user IP
+      if (signInData.user) {
+        try {
+          const { error: ipError } = await supabase.rpc('update_user_ip', {
+            user_id_param: signInData.user.id
+          });
+          
+          if (ipError) {
+            console.error("IP update error:", ipError);
+            // If IP lock fails, sign out the user
+            await supabase.auth.signOut();
+            toast({ 
+              title: "Access Denied", 
+              description: "IP address mismatch. Please contact an administrator to reset your IP lock.", 
+              variant: "destructive" 
+            });
+            return { error: new Error("IP address mismatch") };
+          }
+        } catch (ipError) {
+          console.error("IP update error:", ipError);
+          await supabase.auth.signOut();
+          toast({ 
+            title: "Access Denied", 
+            description: "IP address mismatch. Please contact an administrator to reset your IP lock.", 
+            variant: "destructive" 
+          });
+          return { error: new Error("IP address mismatch") };
+        }
+      }
+      
+      return { error: null };
     } catch (error) {
       console.error("Unexpected sign in error:", error);
       toast({ title: "Sign In Failed", description: "An unexpected error occurred", variant: "destructive" });
