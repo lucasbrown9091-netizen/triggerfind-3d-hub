@@ -125,16 +125,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log("User created successfully:", signUpData.user.id);
 
-      // Create or update profile row, and return the row to get its id (for license_keys.used_by FK)
+      // Create profile manually
       const { data: profileRow, error: profileError } = await supabase
         .from('profiles')
-        .upsert({
+        .insert({
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
+          license_type: keyData.license_type || 'lifetime',
+          license_expires_at: keyData.expires_at,
           ip_lock_enabled: true,
-        } as any, { onConflict: 'user_id' })
-        .select()
+        })
+        .select('id, user_id, username, license_key')
         .single();
 
       if (profileError) {
@@ -145,12 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: profileError };
       }
 
-      // Mark license as used (license_keys.used_by references profiles.id)
+      console.log("Profile created:", profileRow);
+
+      // Mark license as used
       const { error: updateKeyError } = await supabase
         .from('license_keys')
         .update({ 
           is_used: true, 
-          used_by: profileRow?.id ?? null, 
+          used_by: profileRow.id, 
           used_at: new Date().toISOString() 
         })
         .eq('id', keyData.id);
@@ -163,13 +167,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Set initial IP for the new user
       try {
-        const { error: ipError } = await supabase.rpc('update_user_ip', {
-          user_id_param: signUpData.user.id
-        });
+        // Get real IP address from external API
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        const realIP = ipData.ip;
+        
+        console.log("Detected real IP:", realIP);
+        
+        // Update profile with real IP
+        const { error: ipError } = await supabase
+          .from('profiles')
+          .update({ 
+            locked_ip: realIP, 
+            last_ip: realIP, 
+            ip_updated_at: new Date().toISOString() 
+          })
+          .eq('user_id', signUpData.user.id);
         
         if (ipError) {
           console.error("Initial IP setting error:", ipError);
           // Don't fail signup for IP errors, just log it
+        } else {
+          console.log("IP lock set successfully for IP:", realIP);
         }
       } catch (ipError) {
         console.error("Initial IP setting error:", ipError);
@@ -206,33 +225,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error };
       }
 
-      // If sign in successful, update user IP
+      // If sign in successful, check and update user IP
       if (signInData.user) {
         try {
-          const { error: ipError } = await supabase.rpc('update_user_ip', {
-            user_id_param: signInData.user.id
-          });
+          // Get real IP address from external API
+          const ipResponse = await fetch('https://api.ipify.org?format=json');
+          const ipData = await ipResponse.json();
+          const currentIP = ipData.ip;
           
-          if (ipError) {
-            console.error("IP update error:", ipError);
-            // If IP lock fails, sign out the user
+          console.log("Current IP:", currentIP);
+          
+          // Get user profile to check IP lock
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('locked_ip, ip_lock_enabled, last_ip')
+            .eq('user_id', signInData.user.id)
+            .single();
+          
+          if (profileError) {
+            console.error("Profile fetch error:", profileError);
             await supabase.auth.signOut();
             toast({ 
               title: "Access Denied", 
-              description: "IP address mismatch. Please contact an administrator to reset your IP lock.", 
+              description: "Failed to verify profile.", 
               variant: "destructive" 
             });
-            return { error: new Error("IP address mismatch") };
+            return { error: new Error("Profile verification failed") };
           }
+          
+          // Check IP lock if enabled
+          if (profile.ip_lock_enabled && profile.locked_ip) {
+            if (profile.locked_ip !== currentIP) {
+              console.error("IP mismatch:", profile.locked_ip, "vs", currentIP);
+              await supabase.auth.signOut();
+              toast({ 
+                title: "Access Denied", 
+                description: "IP address mismatch. Please contact an administrator to reset your IP lock.", 
+                variant: "destructive" 
+              });
+              return { error: new Error("IP address mismatch") };
+            }
+          }
+          
+          // Update last IP
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ 
+              last_ip: currentIP, 
+              ip_updated_at: new Date().toISOString() 
+            })
+            .eq('user_id', signInData.user.id);
+          
+          if (updateError) {
+            console.error("IP update error:", updateError);
+            // Don't fail signin for IP update errors
+          }
+          
         } catch (ipError) {
-          console.error("IP update error:", ipError);
+          console.error("IP check error:", ipError);
           await supabase.auth.signOut();
           toast({ 
             title: "Access Denied", 
-            description: "IP address mismatch. Please contact an administrator to reset your IP lock.", 
+            description: "Failed to verify IP address. Please try again.", 
             variant: "destructive" 
           });
-          return { error: new Error("IP address mismatch") };
+          return { error: new Error("IP verification failed") };
         }
       }
       
