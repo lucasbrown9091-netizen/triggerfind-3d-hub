@@ -132,8 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           user_id: signUpData.user.id,
           username,
           license_key: normalizedLicense,
-          license_type: keyData.license_type || 'lifetime',
-          license_expires_at: keyData.expires_at,
           ip_lock_enabled: true,
         })
         .select('id, user_id, username, license_key')

@@ -1,11 +1,9 @@
--- Create user profiles table with license key validation
+-- Create user profiles table
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   username TEXT NOT NULL UNIQUE,
   license_key TEXT NOT NULL,
-  license_type TEXT NOT NULL CHECK (license_type IN ('1_week', '1_month', 'lifetime')),
-  license_expires_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
@@ -21,7 +19,6 @@ ADD COLUMN IF NOT EXISTS ip_updated_at TIMESTAMP WITH TIME ZONE DEFAULT now();
 CREATE TABLE IF NOT EXISTS public.license_keys (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   license_key TEXT NOT NULL UNIQUE,
-  license_type TEXT NOT NULL CHECK (license_type IN ('1_week', '1_month', 'lifetime')),
   is_used BOOLEAN NOT NULL DEFAULT false,
   used_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -186,72 +183,7 @@ BEFORE UPDATE ON public.profiles
 FOR EACH ROW
 EXECUTE FUNCTION public.update_updated_at_column();
 
--- Function to handle new user registration with license validation
-CREATE OR REPLACE FUNCTION public.handle_new_user_signup()
-RETURNS TRIGGER AS $$
-DECLARE
-  license_rec RECORD;
-  license_duration INTERVAL;
-  user_license_key TEXT;
-  user_username TEXT;
-BEGIN
-  -- Get license key and username from user metadata
-  user_license_key := COALESCE(
-    NEW.raw_user_meta_data ->> 'license_key',
-    NEW.raw_user_meta_data ->> 'licenseKey'
-  );
-  user_username := COALESCE(
-    NEW.raw_user_meta_data ->> 'username',
-    NEW.raw_user_meta_data ->> 'userName'
-  );
-  
-  -- If no license key found, skip profile creation (let frontend handle it)
-  IF user_license_key IS NULL OR user_username IS NULL THEN
-    RETURN NEW;
-  END IF;
-  
-  -- Check if license key exists and is not used
-  SELECT * INTO license_rec 
-  FROM public.license_keys 
-  WHERE license_key = user_license_key 
-  AND is_used = false;
-  
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Invalid or already used license key';
-  END IF;
-  
-  -- Calculate license expiration
-  CASE license_rec.license_type
-    WHEN '1_week' THEN license_duration := INTERVAL '7 days';
-    WHEN '1_month' THEN license_duration := INTERVAL '30 days';
-    WHEN 'lifetime' THEN license_duration := NULL;
-  END CASE;
-  
-  -- Insert profile with IP locking enabled
-  INSERT INTO public.profiles (
-    user_id, 
-    username, 
-    license_key, 
-    license_type,
-    license_expires_at,
-    ip_lock_enabled
-  ) VALUES (
-    NEW.id,
-    user_username,
-    license_rec.license_key,
-    license_rec.license_type,
-    CASE WHEN license_duration IS NOT NULL THEN now() + license_duration ELSE NULL END,
-    true
-  );
-  
-  -- Mark license key as used (get the profile ID that was just created)
-  UPDATE public.license_keys 
-  SET is_used = true, used_by = (SELECT id FROM public.profiles WHERE user_id = NEW.id), used_at = now()
-  WHERE license_key = license_rec.license_key;
-  
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+-- Function removed - profile creation handled by frontend
 
 -- Trigger for new user signup (disabled - handled by frontend)
 -- DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;

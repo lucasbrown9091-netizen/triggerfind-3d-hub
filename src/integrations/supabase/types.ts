@@ -20,7 +20,6 @@ export type Database = {
           id: string
           is_used: boolean
           license_key: string
-          license_type: string
           used_at: string | null
           used_by: string | null
         }
@@ -29,7 +28,6 @@ export type Database = {
           id?: string
           is_used?: boolean
           license_key: string
-          license_type: string
           used_at?: string | null
           used_by?: string | null
         }
@@ -38,7 +36,6 @@ export type Database = {
           id?: string
           is_used?: boolean
           license_key?: string
-          license_type?: string
           used_at?: string | null
           used_by?: string | null
         }
@@ -56,7 +53,6 @@ export type Database = {
         Row: {
           created_at: string
           id: string
-          license_expires_at: string | null
           license_key: string
           updated_at: string
           user_id: string
@@ -69,7 +65,6 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
-          license_expires_at?: string | null
           license_key: string
           updated_at?: string
           user_id: string
@@ -82,7 +77,6 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
-          license_expires_at?: string | null
           license_key?: string
           updated_at?: string
           user_id?: string
@@ -93,38 +87,6 @@ export type Database = {
           ip_updated_at?: string | null
         }
         Relationships: []
-      }
-      admin_profiles: {
-        Row: {
-          id: string
-          user_id: string
-          is_admin: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          is_admin?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          is_admin?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "admin_profiles_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["user_id"]
-          },
-        ]
       }
       scan_results: {
         Row: {
