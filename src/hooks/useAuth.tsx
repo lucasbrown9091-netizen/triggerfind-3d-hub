@@ -125,7 +125,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log("User created successfully:", signUpData.user.id);
 
-      // Create profile manually
+      // Get real IP address from external API first
+      let realIP = '127.0.0.1'; // fallback
+      try {
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        realIP = ipData.ip;
+        console.log("Detected real IP:", realIP);
+      } catch (ipError) {
+        console.error("IP detection error:", ipError);
+        // Continue with fallback IP
+      }
+
+      // Create profile manually with IP
       const { data: profileRow, error: profileError } = await supabase
         .from('profiles')
         .insert({
@@ -133,6 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username,
           license_key: normalizedLicense,
           ip_lock_enabled: true,
+          locked_ip: realIP,
+          last_ip: realIP,
+          ip_updated_at: new Date().toISOString(),
         })
         .select('id, user_id, username, license_key')
         .single();
@@ -163,35 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: updateKeyError };
       }
 
-      // Set initial IP for the new user
-      try {
-        // Get real IP address from external API
-        const ipResponse = await fetch('https://api.ipify.org?format=json');
-        const ipData = await ipResponse.json();
-        const realIP = ipData.ip;
-        
-        console.log("Detected real IP:", realIP);
-        
-        // Update profile with real IP
-        const { error: ipError } = await supabase
-          .from('profiles')
-          .update({ 
-            locked_ip: realIP, 
-            last_ip: realIP, 
-            ip_updated_at: new Date().toISOString() 
-          })
-          .eq('user_id', signUpData.user.id);
-        
-        if (ipError) {
-          console.error("Initial IP setting error:", ipError);
-          // Don't fail signup for IP errors, just log it
-        } else {
-          console.log("IP lock set successfully for IP:", realIP);
-        }
-      } catch (ipError) {
-        console.error("Initial IP setting error:", ipError);
-        // Don't fail signup for IP errors, just log it
-      }
+      console.log("IP lock set successfully for IP:", realIP);
 
       toast({ title: "Account Created", description: "Your account has been created successfully." });
       return { error: null };
